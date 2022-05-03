@@ -6,6 +6,7 @@ video = cv2.VideoCapture(0)
 
 mode_switch = 0
 sensitivity = 20
+weight = 0.05
 
 while True:
     ret, frame = video.read()
@@ -17,7 +18,7 @@ while True:
         avg = gray.copy().astype("float")
         continue
 
-    cv2.accumulateWeighted(gray, avg, 0.05)
+    cv2.accumulateWeighted(gray, avg, weight)
 
     diff_frame = cv2.absdiff(cv2.convertScaleAbs(avg), gray)
 
