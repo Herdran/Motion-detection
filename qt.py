@@ -1,7 +1,9 @@
+from threading import Timer
 from PySide6.QtWidgets import QWidget, QApplication, QLabel, QVBoxLayout, QMainWindow, QHBoxLayout, QPushButton, QSizePolicy, QGroupBox, QComboBox, QSlider
 from PySide6.QtGui import QPixmap, QAction, QImage
 from PySide6.QtCore import Signal, Slot, Qt, QThread
 from time import sleep
+from time import time as timer
 import sys
 import cv2
 
@@ -27,8 +29,19 @@ class VideoThread(QThread):
         self.wait()
 
     def run(self):
-        video = cv2.VideoCapture(0)
+        
+        fps = -1
+        if len(sys.argv) == 3:
+            video = cv2.VideoCapture(sys.argv[2]) 
+            if(sys.argv[1] == '-f'):
+                fps = video.get(cv2.CAP_PROP_FPS)
+                fps /= 1000
+        else:
+            video = cv2.VideoCapture(0)
+            
+        
         while self.status:
+            start = timer()
             ret, frame = video.read()
             if not ret:
                 continue
@@ -76,6 +89,11 @@ class VideoThread(QThread):
             scaled_img = img.scaled(640, 480, Qt.KeepAspectRatio)
             self.change_pixmap_signal.emit(scaled_img)
 
+            if(fps != -1):
+                diff = timer() - start
+                while  diff < fps:
+                    diff = timer() - start                 
+
         video.release()
 
 
@@ -83,7 +101,6 @@ class App(QMainWindow):
     def __init__(self):
         super().__init__()
         self.running = "start"
-        self.debug = False
 
         self.setWindowTitle("Demo build")
         self.setGeometry(0, 0, 700, 500)
@@ -92,10 +109,6 @@ class App(QMainWindow):
         self.menu_file = self.menu.addMenu("File")
         exit_ = QAction("Exit", self, triggered=qApp.quit)
         self.menu_file.addAction(exit_)
-
-        self.menu_debug = self.menu.addMenu("&Debug?")
-        debug = QAction("Debug??..", self, triggered=self.debug_mode())
-        self.menu_debug.addAction(debug)
 
         self.label = QLabel(self)
         self.label.setFixedSize(640, 480)
@@ -107,6 +120,7 @@ class App(QMainWindow):
         self.combobox = QComboBox()
         for mode in ["Gray Frame", "Difference Frame", "Threshold Frame", "Color Frame"]:
             self.combobox.addItem(mode)
+        self.combobox.setCurrentIndex(3)
 
         modes_layout = QHBoxLayout()
         modes_layout.addWidget(QLabel("Modes"), 10)
@@ -166,6 +180,8 @@ class App(QMainWindow):
         self.button2.clicked.connect(self.pause_kill)
         self.combobox.currentIndexChanged.connect(self.set_mode)
         self.sensitivity_slider.sliderMoved.connect(self.set_sensitivity)
+        
+        
 
     @Slot(QImage)
     def update_image(self, cv_img):
@@ -207,16 +223,15 @@ class App(QMainWindow):
             # This way of quitting gives a warning
             quit()
 
-    # Currently it does nothing besides flipping debug boolean
-    @Slot()
-    def debug_mode(self):
-        if self.debug:
-            self.debug = False
-        else:
-            self.debug = True
-
 
 if __name__ == "__main__":
+    if (len(sys.argv) not in [1, 3] or (len(sys.argv) == 3 and sys.argv[1] not in ['-f', '-s'])):
+        print("To use: ");
+        print(sys.argv[0], "- for running camera")
+        print(sys.argv[0], "-f [path] - for running local video")
+        print(sys.argv[0], "-s [link] - for running video from stream (eg. rtp)")
+        exit(1)
+        
     app = QApplication()
     a = App()
     a.show()
