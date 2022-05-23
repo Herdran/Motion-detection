@@ -2,6 +2,7 @@ from threading import Timer
 from PySide6.QtWidgets import QWidget, QApplication, QLabel, QVBoxLayout, QMainWindow, QHBoxLayout, QPushButton, QSizePolicy, QGroupBox, QComboBox, QSlider
 from PySide6.QtGui import QPixmap, QAction, QImage
 from PySide6.QtCore import Signal, Slot, Qt, QThread
+from superqt import QRangeSlider
 from time import sleep
 from time import time as timer
 import sys
@@ -15,31 +16,43 @@ class VideoThread(QThread):
         QThread.__init__(self, parent)
         self.status = True
         self.mode = 0
-        self.sensitivity = 20
+        self.detection_sensitivity = 20
         self.avg = None
+        self.x_min = 0
+        self.x_max = 640
+        self.y_min = 0
+        self.y_max = 480
+        self.min_contour_size = 80
 
     def set_mode(self, mode):
         self.mode = mode
 
-    def set_sensitivity(self, val):
-        self.sensitivity = val
+    def set_detection_sensitivity(self, val):
+        self.detection_sensitivity = val
+
+    def set_senstivity_range_h(self, val):
+        self.x_min = int(val[0])
+        self.x_max = int(val[1])
+
+    def set_senstivity_range_v(self, val):
+        self.y_min = int(val[0])
+        self.y_max = int(val[1])
 
     def stop(self):
         self.status = False
         self.wait()
 
     def run(self):
-        
+
         fps = -1
         if len(sys.argv) == 3:
-            video = cv2.VideoCapture(sys.argv[2]) 
-            if(sys.argv[1] == '-f'):
+            video = cv2.VideoCapture(sys.argv[2])
+            if sys.argv[1] == '-f':
                 fps = video.get(cv2.CAP_PROP_FPS)
                 fps /= 1000
         else:
             video = cv2.VideoCapture(0)
-            
-        
+
         while self.status:
             start = timer()
             ret, frame = video.read()
@@ -59,7 +72,7 @@ class VideoThread(QThread):
                 diff_frame = cv2.absdiff(cv2.convertScaleAbs(self.avg), gray)
 
                 if self.mode != 1:
-                    thresh_frame = cv2.threshold(diff_frame, self.sensitivity, 255, cv2.THRESH_BINARY)[1]
+                    thresh_frame = cv2.threshold(diff_frame, self.detection_sensitivity, 255, cv2.THRESH_BINARY)[1]
                     thresh_frame = cv2.dilate(thresh_frame, None, iterations=2)
 
                     if self.mode != 2:
@@ -70,6 +83,19 @@ class VideoThread(QThread):
                                 continue
 
                             (x, y, w, h) = cv2.boundingRect(contour)
+
+                            if x + w <= self.x_min or x >= self.x_max or y + h <= self.y_min or y >= self.y_max:
+                                continue
+
+                            w = w - max(self.x_min - x, 0) - min((x + w) - self.x_max, w)
+                            x = max(x, self.x_min)
+
+                            h = h - max(self.y_min - y, 0) - min((y + h) - self.y_max, h)
+                            y = max(y, self.y_min)
+
+                            if w * h < self.min_contour_size:
+                                continue
+
                             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 3)
 
             if self.mode == 0:
@@ -89,10 +115,10 @@ class VideoThread(QThread):
             scaled_img = img.scaled(640, 480, Qt.KeepAspectRatio)
             self.change_pixmap_signal.emit(scaled_img)
 
-            if(fps != -1):
+            if (fps != -1):
                 diff = timer() - start
-                while  diff < fps:
-                    diff = timer() - start                 
+                while diff < fps:
+                    diff = timer() - start
 
         video.release()
 
@@ -143,45 +169,71 @@ class App(QMainWindow):
         self.button1.setEnabled(True)
         self.button2.setEnabled(False)
 
-        right_side_layout = QHBoxLayout()
-        right_side_layout.addWidget(self.group_modes, 1)
-        right_side_layout.addLayout(buttons_layout, 1)
+        bottom_side_layout = QHBoxLayout()
+        bottom_side_layout.addWidget(self.group_modes, 1)
+        bottom_side_layout.addLayout(buttons_layout, 1)
 
-        self.sensitivity_slider = QSlider()
-        self.sensitivity_slider.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self.detection_sensitivity_slider = QSlider()
+        self.detection_sensitivity_slider.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
 
-        self.sensitivity_slider.setMinimum(0)
-        self.sensitivity_slider.setMaximum(50)
-        self.sensitivity_slider.setValue(25)
+        self.detection_sensitivity_slider.setMinimum(0)
+        self.detection_sensitivity_slider.setMaximum(50)
+        self.detection_sensitivity_slider.setValue(25)
 
         slider_layout = QVBoxLayout()
         # sensitivity range display is not centered
         slider_layout.addWidget(QLabel("50"), 10)
-        slider_layout.addWidget(self.sensitivity_slider, 80)
+        slider_layout.addWidget(self.detection_sensitivity_slider, 80)
         slider_layout.addWidget(QLabel("0"), 10)
 
         self.group_sensitivity = QGroupBox("Sensitivity")
         self.group_sensitivity.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.group_sensitivity.setLayout(slider_layout)
 
-        frame_and_slider = QHBoxLayout()
-        frame_and_slider.addWidget(self.label)
-        frame_and_slider.addWidget(self.group_sensitivity)
+        self.sensitivity_range_slider_v = QRangeSlider()
+        self.sensitivity_range_slider_v.setInvertedAppearance(True)
+        self.sensitivity_range_slider_h = QRangeSlider()
+        self.sensitivity_range_slider_h.setOrientation(Qt.Horizontal)
 
-        layout = QVBoxLayout()
-        layout.addLayout(frame_and_slider)
-        layout.addLayout(right_side_layout)
+        self.sensitivity_range_slider_v.setMinimum(0)
+        self.sensitivity_range_slider_h.setMinimum(0)
+
+        self.sensitivity_range_slider_v.setMaximum(480)
+        self.sensitivity_range_slider_h.setMaximum(640)
+
+        self.sensitivity_range_slider_v.setValue([0, 480])
+        self.sensitivity_range_slider_h.setValue([0, 640])
+
+        self.frame_and_slider_h = QHBoxLayout()
+        self.frame_and_slider_h.addWidget(self.label)
+        self.frame_and_slider_h.addWidget(self.sensitivity_range_slider_v)
+
+        self.frame_and_slider_v = QHBoxLayout()
+        self.frame_and_slider_v.addWidget(self.sensitivity_range_slider_h)
+        self.frame_and_slider_v.addSpacing(20)
+
+        self.frame_and_sliders = QVBoxLayout()
+        self.frame_and_sliders.addLayout(self.frame_and_slider_h)
+        self.frame_and_sliders.addLayout(self.frame_and_slider_v)
+
+        frame_sliders_sensitivity = QHBoxLayout()
+        frame_sliders_sensitivity.addLayout(self.frame_and_sliders)
+        frame_sliders_sensitivity.addWidget(self.group_sensitivity)
+
+        main_layout = QVBoxLayout()
+        main_layout.addLayout(frame_sliders_sensitivity)
+        main_layout.addLayout(bottom_side_layout)
 
         widget = QWidget(self)
-        widget.setLayout(layout)
+        widget.setLayout(main_layout)
         self.setCentralWidget(widget)
 
         self.button1.clicked.connect(self.start)
         self.button2.clicked.connect(self.pause_kill)
         self.combobox.currentIndexChanged.connect(self.set_mode)
-        self.sensitivity_slider.sliderMoved.connect(self.set_sensitivity)
-        
-        
+        self.detection_sensitivity_slider.sliderMoved.connect(self.set_detection_sensitivity)
+        self.sensitivity_range_slider_v.sliderMoved.connect(self.set_senstivity_range_v)
+        self.sensitivity_range_slider_h.sliderMoved.connect(self.set_senstivity_range_h)
 
     @Slot(QImage)
     def update_image(self, cv_img):
@@ -206,8 +258,16 @@ class App(QMainWindow):
         self.thread.set_mode(index)
 
     @Slot()
-    def set_sensitivity(self, val):
-        self.thread.set_sensitivity(val)
+    def set_detection_sensitivity(self, val):
+        self.thread.set_detection_sensitivity(val)
+
+    @Slot()
+    def set_senstivity_range_h(self, val):
+        self.thread.set_senstivity_range_h(val)
+
+    @Slot()
+    def set_senstivity_range_v(self, val):
+        self.thread.set_senstivity_range_v(val)
 
     @Slot()
     def pause_kill(self):
@@ -225,13 +285,13 @@ class App(QMainWindow):
 
 
 if __name__ == "__main__":
-    if (len(sys.argv) not in [1, 3] or (len(sys.argv) == 3 and sys.argv[1] not in ['-f', '-s'])):
-        print("To use: ");
+    if len(sys.argv) not in [1, 3] or (len(sys.argv) == 3 and sys.argv[1] not in ['-f', '-s']):
+        print("To use: ")
         print(sys.argv[0], "- for running camera")
         print(sys.argv[0], "-f [path] - for running local video")
         print(sys.argv[0], "-s [link] - for running video from stream (eg. rtp)")
         exit(1)
-        
+
     app = QApplication()
     a = App()
     a.show()
