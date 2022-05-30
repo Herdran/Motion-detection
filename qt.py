@@ -22,7 +22,7 @@ class VideoThread(QThread):
         self.x_max = 640
         self.y_min = 0
         self.y_max = 480
-        self.min_contour_size = 80
+        self.min_contour_size = 30
 
     def set_mode(self, mode):
         self.mode = mode
@@ -58,6 +58,8 @@ class VideoThread(QThread):
             ret, frame = video.read()
             if not ret:
                 continue
+
+            frame = cv2.resize(frame, (640, 480))   
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             gray = cv2.GaussianBlur(gray, (21, 21), 0)
