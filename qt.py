@@ -8,6 +8,7 @@ from time import time as timer
 import sys
 import cv2
 
+STREAM_BUFFER_GUARD = 1/25
 
 class VideoThread(QThread):
     change_pixmap_signal = Signal(QImage)
@@ -127,6 +128,9 @@ class VideoThread(QThread):
                 diff = timer() - start
                 while diff < fps:
                     diff = timer() - start
+            
+            if sys.argv[1] == '-s': 
+                sleep(STREAM_BUFFER_GUARD)
 
         video.release()
 
