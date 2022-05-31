@@ -1,5 +1,6 @@
 from threading import Timer
-from PySide6.QtWidgets import QWidget, QApplication, QLabel, QVBoxLayout, QMainWindow, QHBoxLayout, QPushButton, QSizePolicy, QGroupBox, QComboBox, QSlider
+from PySide6.QtWidgets import QWidget, QApplication, QLabel, QVBoxLayout, QMainWindow, QHBoxLayout, QPushButton, \
+    QSizePolicy, QGroupBox, QComboBox, QSlider, QLineEdit
 from PySide6.QtGui import QPixmap, QAction, QImage
 from PySide6.QtCore import Signal, Slot, Qt, QThread
 from superqt import QRangeSlider
@@ -8,7 +9,8 @@ from time import time as timer
 import sys
 import cv2
 
-STREAM_BUFFER_GUARD = 1/25
+STREAM_BUFFER_GUARD = 1 / 25
+
 
 class VideoThread(QThread):
     change_pixmap_signal = Signal(QImage)
@@ -23,7 +25,7 @@ class VideoThread(QThread):
         self.x_max = 640
         self.y_min = 0
         self.y_max = 480
-        self.min_contour_size = 150
+        self.min_contour_size = 10000
 
     def set_mode(self, mode):
         self.mode = mode
@@ -87,24 +89,8 @@ class VideoThread(QThread):
                         for contour in cnts:
                             (x, y, w, h) = cv2.boundingRect(contour)
 
-                            if self.x_min <= x and x + w <= self.x_max and \
-                                    self.y_min <= y and y + h <= self.y_max and \
+                            if self.x_min <= x and x + w <= self.x_max and self.y_min <= y and y + h <= self.y_max and \
                                     cv2.contourArea(contour) >= self.min_contour_size:
-
-
-                            # if x + w <= self.x_min or x >= self.x_max or y + h <= self.y_min or y >= self.y_max:
-                            #     continue
-                            #
-                            # w = w - max(self.x_min - x, 0) - max((x + w) - self.x_max, 0)
-                            # x = max(x, self.x_min)
-                            #
-                            # h = h - max(self.y_min - y, 0) - max((y + h) - self.y_max, 0)
-                            # y = max(y, self.y_min)
-                            #
-                            # if w * h < self.min_contour_size:
-                            #     continue
-
-
                                 cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 3)
 
             if self.mode == 0:
@@ -124,12 +110,12 @@ class VideoThread(QThread):
             scaled_img = img.scaled(640, 480, Qt.KeepAspectRatio)
             self.change_pixmap_signal.emit(scaled_img)
 
-            if (fps != -1):
+            if fps != -1:
                 diff = timer() - start
                 while diff < fps:
                     diff = timer() - start
-            
-            if sys.argv[1] == '-s': 
+
+            if len(sys.argv) > 1 and sys.argv[1] == '-s':
                 sleep(STREAM_BUFFER_GUARD)
 
         video.release()
@@ -160,25 +146,27 @@ class App(QMainWindow):
             self.combobox.addItem(mode)
         self.combobox.setCurrentIndex(3)
 
-        modes_layout = QHBoxLayout()
-        modes_layout.addWidget(self.combobox, 90)
+        self.modes_layout = QHBoxLayout()
+        self.modes_layout.addWidget(QLabel("Modes"), 10)
+        self.modes_layout.addWidget(self.combobox, 90)
 
-        self.group_modes = QGroupBox("Display modes")
+        self.group_modes = QGroupBox("Debug")
         self.group_modes.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        self.group_modes.setLayout(modes_layout)
 
-        self.combobox2 = QComboBox()
-        for mode in ["150", "500", "1000", "10000"]:
-            self.combobox2.addItem(mode)
-        self.combobox2.setCurrentIndex(0)
+        self.lineEdit = QLineEdit()
+        self.lineEdit.setInputMask("90000")
+        self.lineEdit.setText("10000")
+        self.lineEdit.setCursorPosition(0)
 
-        sizes_layout = QHBoxLayout()
-        sizes_layout.addWidget(self.combobox2, 90)
+        self.sizes_layout = QHBoxLayout()
+        self.sizes_layout.addWidget(QLabel("Minimal contour size"), 10)
+        self.sizes_layout.addWidget(self.lineEdit, 90)
 
-        self.group_sizes = QGroupBox("Minimal contour size")
-        self.group_sizes.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        self.group_sizes.setLayout(sizes_layout)
+        self.debug_layout = QVBoxLayout()
+        self.debug_layout.addLayout(self.modes_layout)
+        self.debug_layout.addLayout(self.sizes_layout)
 
+        self.group_modes.setLayout(self.debug_layout)
 
         buttons_layout = QHBoxLayout()
         self.button1 = QPushButton("Start")
@@ -194,9 +182,8 @@ class App(QMainWindow):
         self.button2.setEnabled(False)
 
         bottom_side_layout = QHBoxLayout()
-        bottom_side_layout.addWidget(self.group_modes, 5)
-        bottom_side_layout.addWidget(self.group_sizes, 1)
-        bottom_side_layout.addLayout(buttons_layout, 5)
+        bottom_side_layout.addWidget(self.group_modes, 1)
+        bottom_side_layout.addLayout(buttons_layout, 1)
 
         self.detection_sensitivity_slider = QSlider()
         self.detection_sensitivity_slider.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
@@ -256,7 +243,7 @@ class App(QMainWindow):
         self.button1.clicked.connect(self.start)
         self.button2.clicked.connect(self.pause_kill)
         self.combobox.currentIndexChanged.connect(self.set_mode)
-        self.combobox2.currentTextChanged.connect(self.set_size)
+        self.lineEdit.editingFinished.connect(self.set_size)
         self.detection_sensitivity_slider.sliderMoved.connect(self.set_detection_sensitivity)
         self.sensitivity_range_slider_v.sliderMoved.connect(self.set_senstivity_range_v)
         self.sensitivity_range_slider_h.sliderMoved.connect(self.set_senstivity_range_h)
@@ -284,8 +271,8 @@ class App(QMainWindow):
         self.thread.set_mode(index)
 
     @Slot()
-    def set_size(self, text):
-        self.thread.set_size(int(text))
+    def set_size(self):
+        self.thread.set_size(int(self.lineEdit.displayText()))
 
     @Slot()
     def set_detection_sensitivity(self, val):
