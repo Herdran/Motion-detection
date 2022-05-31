@@ -22,7 +22,7 @@ class VideoThread(QThread):
         self.x_max = 640
         self.y_min = 0
         self.y_max = 480
-        self.min_contour_size = 30
+        self.min_contour_size = 150
 
     def set_mode(self, mode):
         self.mode = mode
@@ -59,7 +59,7 @@ class VideoThread(QThread):
             if not ret:
                 continue
 
-            frame = cv2.resize(frame, (640, 480))   
+            frame = cv2.resize(frame, (640, 480))
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             gray = cv2.GaussianBlur(gray, (21, 21), 0)
@@ -81,24 +81,27 @@ class VideoThread(QThread):
                         cnts, _ = cv2.findContours(thresh_frame.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
                         for contour in cnts:
-                            if cv2.contourArea(contour) < 10000:
-                                continue
-
                             (x, y, w, h) = cv2.boundingRect(contour)
 
-                            if x + w <= self.x_min or x >= self.x_max or y + h <= self.y_min or y >= self.y_max:
-                                continue
+                            if self.x_min <= x and x + w <= self.x_max and \
+                                    self.y_min <= y and y + h <= self.y_max and \
+                                    cv2.contourArea(contour) >= self.min_contour_size:
 
-                            w = w - max(self.x_min - x, 0) - min((x + w) - self.x_max, w)
-                            x = max(x, self.x_min)
 
-                            h = h - max(self.y_min - y, 0) - min((y + h) - self.y_max, h)
-                            y = max(y, self.y_min)
+                            # if x + w <= self.x_min or x >= self.x_max or y + h <= self.y_min or y >= self.y_max:
+                            #     continue
+                            #
+                            # w = w - max(self.x_min - x, 0) - max((x + w) - self.x_max, 0)
+                            # x = max(x, self.x_min)
+                            #
+                            # h = h - max(self.y_min - y, 0) - max((y + h) - self.y_max, 0)
+                            # y = max(y, self.y_min)
+                            #
+                            # if w * h < self.min_contour_size:
+                            #     continue
 
-                            if w * h < self.min_contour_size:
-                                continue
 
-                            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 3)
+                                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 3)
 
             if self.mode == 0:
                 color_frame = cv2.cvtColor(gray, cv2.COLOR_BGR2RGB)
